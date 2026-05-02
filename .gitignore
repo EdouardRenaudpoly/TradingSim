@@ -21,6 +21,17 @@ data/session.json
 *.env
 .env
 
+# ITCH raw data and generated full datasets (too large for git)
+# Use tools/itch_to_csv.py to regenerate from the raw ITCH file
+*.NASDAQ_ITCH50.gz
+*-v2.txt
+data/nasdaq_20030103.csv
+*.db
+
+# SQLite temp files
+*.db-shm
+*.db-wal
+
 # IDE
 .vscode/
 .idea/

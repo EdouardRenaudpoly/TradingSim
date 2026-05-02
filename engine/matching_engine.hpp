@@ -7,6 +7,7 @@
 #include <atomic>
 #include <cstring>
 #include <memory>
+#include <thread>
 #include <unordered_map>
 #include <vector>
 
@@ -49,6 +50,7 @@ public:
     static constexpr std::size_t QUEUE_SIZE = 1 << 12; // 4 096 SPSC slots
 
     MatchingEngine() = default;
+    // jthread joins automatically on destruction — no manual destructor needed.
 
     // Producer thread — allocate from pool, push to SPSC queue.
     // For ICEBERG: set peak_size > 0 and quantity = total (hidden + first tranche).
@@ -60,7 +62,13 @@ public:
                   OrderType   type      = OrderType::LIMIT,
                   int32_t     peak_size = 0) noexcept;
 
-    // Consumer/matcher thread — drain queue, match, record all metrics.
+    // Two-thread mode: start a dedicated consumer thread that drains and matches
+    // continuously. While it is running, do NOT call processAll() from another thread.
+    void startMatcherThread();
+    // Signal the consumer thread to stop and block until it drains the queue and exits.
+    void stopMatcherThread();
+
+    // Single-thread mode — drain queue, match, record all metrics.
     std::vector<Trade> processAll();
 
     // Read current book state (e.g. to capture mid-price before submitting)
@@ -80,6 +88,11 @@ private:
     std::atomic<uint64_t>          next_id_{1};
     std::atomic<uint64_t>          processed_{0};
     double                         cpu_ghz_ = -1.0; // calibrated lazily
+
+    // jthread carries its own stop_source; no manual stop_flag_ needed.
+    // On destruction it calls request_stop() + join() automatically.
+    std::jthread matcher_thread_;
+    void matcherLoop(std::stop_token stop);
 
     // Symbol stored as uint64_t (8 bytes reinterpreted): integer hash is one CPU
     // instruction vs strlen + iterative hash for std::string.

@@ -1,12 +1,12 @@
 # TradingSim — C++ Matching Engine
 
-A price-time priority matching engine written in C++17. Supports six order types, lock-free data structures, and nanosecond-resolution latency tracking via the CPU timestamp counter.
+A price-time priority matching engine written in C++20. Supports six order types, lock-free data structures, and nanosecond-resolution latency tracking via the CPU timestamp counter.
 
 ---
 
 ## Build
 
-Requires: `g++ >= 9`, `cmake >= 3.14`, internet access (GoogleTest is downloaded automatically).
+Requires: `g++ >= 10`, `cmake >= 3.14`, internet access (GoogleTest is downloaded automatically).
 
 ```bash
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
@@ -33,6 +33,25 @@ With `--db`, all trades and per-trader metrics are written to a SQLite database.
 SELECT symbol, price, quantity, mid_at_fill, book_imbalance FROM trades;
 SELECT trader_id, pnl, vwap, slippage FROM trader_metrics ORDER BY pnl DESC;
 SELECT symbol, AVG(price) as avg_price, SUM(quantity) as total_vol FROM trades GROUP BY symbol;
+```
+
+**Replay real NASDAQ data:**
+
+`data/nasdaq_sample.csv` contains 50 000 real Add Order messages from the NASDAQ ITCH feed on January 3, 2003 (MSFT, CSCO, INTC, KLAC, DELL, GE, IBM, SUNW).
+
+```bash
+./build/engine --replay data/nasdaq_sample.csv
+./build/engine --replay data/nasdaq_sample.csv --db trades.db
+```
+
+To generate a larger dataset from the raw ITCH file (download `S010303-v2.zip` from `ftp://emi.nasdaq.com/ITCH/`):
+
+```bash
+# Full day, 8 symbols, ~359k orders
+python3 tools/itch_to_csv.py S010303-v2.txt data/nasdaq_20030103.csv \
+  --symbols MSFT CSCO INTC KLAC DELL GE IBM SUNW \
+  --min-price 0.50 --max-price 499.99
+./build/engine --replay data/nasdaq_20030103.csv
 ```
 
 **Synthetic benchmark:**

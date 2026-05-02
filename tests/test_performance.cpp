@@ -4,11 +4,13 @@
 #include <chrono>
 #include <iostream>
 #include <random>
+#include <thread>
 
 // Measures end-to-end throughput and per-order dispatch latency.
 // Acts as a regression guard: if a future change tanks perf, this fails.
 TEST(Performance, Throughput_100k_LimitOrders) {
-    MatchingEngine engine;
+    auto ep = std::make_unique<MatchingEngine>();
+    auto& engine = *ep;
     std::mt19937 rng(42);
     std::uniform_real_distribution<> price_dist(148.0, 152.0);
     std::uniform_int_distribution<>  qty_dist(1, 100);
@@ -37,7 +39,8 @@ TEST(Performance, Throughput_100k_LimitOrders) {
 }
 
 TEST(Performance, Throughput_AllOrderTypes) {
-    MatchingEngine engine;
+    auto ep = std::make_unique<MatchingEngine>();
+    auto& engine = *ep;
     std::mt19937 rng(99);
     std::uniform_real_distribution<> price_dist(148.0, 152.0);
     std::uniform_int_distribution<>  qty_dist(1, 100);
@@ -73,8 +76,39 @@ TEST(Performance, Throughput_AllOrderTypes) {
     EXPECT_GT(throughput, 50'000.0) << "Throughput regression detected";
 }
 
+// Verifies that the producer/consumer split works correctly under real concurrency:
+// producer thread submits orders while the matcher thread runs independently.
+TEST(Performance, ConcurrentProducerConsumer) {
+    auto ep = std::make_unique<MatchingEngine>();
+    auto& engine = *ep;
+
+    engine.startMatcherThread();
+
+    std::mt19937 rng(13);
+    std::uniform_real_distribution<> price_dist(148.0, 152.0);
+    std::uniform_int_distribution<>  qty_dist(1, 100);
+    std::uniform_int_distribution<>  side_dist(0, 1);
+
+    const int N = 20'000;
+    for (int i = 0; i < N; ++i) {
+        while (!engine.submit(
+            static_cast<uint64_t>(i % 5 + 1), "AAPL",
+            price_dist(rng), qty_dist(rng),
+            side_dist(rng) ? Side::BUY : Side::SELL,
+            OrderType::LIMIT))
+        {
+            std::this_thread::yield();
+        }
+    }
+
+    engine.stopMatcherThread();
+
+    EXPECT_EQ(engine.ordersProcessed(), static_cast<uint64_t>(N));
+}
+
 TEST(Performance, P50Latency_LimitOrders) {
-    MatchingEngine engine;
+    auto ep = std::make_unique<MatchingEngine>();
+    auto& engine = *ep;
     std::mt19937 rng(7);
     std::uniform_real_distribution<> price_dist(148.0, 152.0);
     std::uniform_int_distribution<>  qty_dist(1, 100);

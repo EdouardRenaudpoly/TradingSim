@@ -1,11 +1,15 @@
 #pragma once
 #include <array>
 #include <atomic>
+#include <concepts>
 #include <cstddef>
 
+// T must expose a T* next pointer for intrusive free-list linking.
+template<typename T>
+concept IntrusiveNode = requires(T t) { { t.next } -> std::convertible_to<T*>; };
+
 // Lock-free slab allocator. Uses a Treiber stack (atomic CAS free-list).
-// T must have a `T* next` member for intrusive linking.
-template<typename T, std::size_t Capacity>
+template<IntrusiveNode T, std::size_t Capacity>
 class MemoryPool {
 public:
     MemoryPool() noexcept {
@@ -19,7 +23,7 @@ public:
         // compare_exchange_weak: single CPU instruction (lock cmpxchg), no syscall.
         // acquire: ensures we see the full object before using it.
         T* old = head_.load(std::memory_order_acquire);
-        while (old) {
+        while (old) [[likely]] {
             if (head_.compare_exchange_weak(old, old->next,
                     std::memory_order_release,
                     std::memory_order_acquire))

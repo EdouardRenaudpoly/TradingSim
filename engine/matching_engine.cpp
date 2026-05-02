@@ -3,6 +3,29 @@
 #include <cmath>
 #include <iostream>
 #include <iomanip>
+#include <thread>
+
+void MatchingEngine::startMatcherThread() {
+    matcher_thread_ = std::jthread([this](std::stop_token stop) {
+        matcherLoop(stop);
+    });
+}
+
+void MatchingEngine::stopMatcherThread() {
+    matcher_thread_.request_stop();
+    if (matcher_thread_.joinable())
+        matcher_thread_.join();
+}
+
+// Dedicated consumer thread: busy-polls when the queue has work, yields when idle.
+// Exits when stop is requested AND the queue is drained.
+void MatchingEngine::matcherLoop(std::stop_token stop) {
+    while (!stop.stop_requested() || !queue_.empty()) {
+        processAll();
+        if (queue_.empty())
+            std::this_thread::yield();
+    }
+}
 
 void EngineStats::print() const {
     std::cout << std::fixed << std::setprecision(2);

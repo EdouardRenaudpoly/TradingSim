@@ -49,6 +49,28 @@ Simulation::CsvRow Simulation::parseRow(const std::string& line, int line_num) {
     return row;
 }
 
+std::vector<Simulation::CsvRow> Simulation::loadCSV(const std::string& csv_path) {
+    std::ifstream f(csv_path);
+    if (!f.is_open())
+        throw std::runtime_error("Cannot open: " + csv_path);
+
+    std::vector<CsvRow> rows;
+    std::string line;
+    std::getline(f, line); // skip header
+    int line_num = 1;
+
+    while (std::getline(f, line)) {
+        ++line_num;
+        if (trim(line).empty()) continue;
+        try {
+            rows.push_back(parseRow(line, line_num));
+        } catch (const std::exception& e) {
+            std::cerr << "[warn] " << e.what() << "\n";
+        }
+    }
+    return rows;
+}
+
 void Simulation::replayCSV(const std::string& csv_path) {
     std::ifstream f(csv_path);
     if (!f.is_open())

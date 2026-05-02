@@ -16,7 +16,7 @@ public:
     bool push(T item) noexcept {
         const std::size_t h      = head_.load(std::memory_order_relaxed);
         const std::size_t next_h = (h + 1) & MASK;
-        if (next_h == tail_.load(std::memory_order_acquire))
+        if (next_h == tail_.load(std::memory_order_acquire)) [[unlikely]]
             return false;
         buffer_[h] = item;
         // release: guarantees the buffer write is visible before the index update.

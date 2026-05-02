@@ -81,19 +81,30 @@ cd build && ctest --output-on-failure
 
 ## Benchmark
 
-Single core, Release build (`-O3 -march=native`), 100 000 orders across 3 symbols and all 6 order types.
+Release build (`-O3 -march=native`), producer and consumer on separate threads (see [Threading model](#threading-model)).
+
+**Synthetic** — 100 000 orders across 3 symbols and all 6 order types:
 
 ```
-Throughput :  358 971 orders/sec
-Latency p50 :     174 ns
-Latency p95 :   5 377 ns
-Latency p99 :  54 573 ns
-Queue wait  :     115 ns avg
+Throughput :  383 000 orders/sec
+Latency p50 :     394 ns
+Latency p95 :   7 016 ns
+Latency p99 :  41 962 ns
+Queue wait  :  10 400 ns avg
 ```
 
-p50 is the median dispatch time per order (price-level lookup + match loop). p99 spikes come from iceberg replenishment cycles which re-insert and re-match in a loop.
+**NASDAQ replay** — 50 000 real Add Order messages (Jan 3 2003, 8 symbols):
 
-**Performance history** — three optimizations applied after initial implementation:
+```
+Throughput : 1 187 000 orders/sec
+Latency p50 :     206 ns
+Latency p95 :     587 ns
+Latency p99 :     893 ns
+```
+
+p50 is the median dispatch time per order (price-level lookup + match loop). Synthetic p99 spikes come from iceberg replenishment cycles. NASDAQ p99 is ~47× lower because real order flow is predominantly LIMIT orders with no icebergs, and prices cluster near the market price so the matching loop exits sooner.
+
+**Performance history** — three optimizations applied after initial implementation (measured single-thread for apples-to-apples comparison):
 
 | Optimization | Throughput | p50 | p99 |
 |---|---|---|---|

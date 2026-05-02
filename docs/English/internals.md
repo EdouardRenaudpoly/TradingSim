@@ -279,7 +279,7 @@ In two-thread mode the producer (main thread) and consumer (matcher thread) run 
 
 **yield vs busy-spin:** When the queue is empty, `matcherLoop()` calls `std::this_thread::yield()` to give the CPU to other threads. In a production HFT system the consumer would busy-spin (no yield) to minimise wake-up latency, at the cost of 100% CPU usage on a dedicated core. Yield is the correct tradeoff for a demo that shares a machine.
 
-**Clean shutdown:** `stopMatcherThread()` stores `stop_flag_ = true` with `memory_order_release`, then joins the thread. The join guarantees all queued orders are processed before stats are read.
+**Clean shutdown:** `stopMatcherThread()` calls `request_stop()` on the `jthread`, then joins the thread. The join guarantees all queued orders are processed before stats are read.
 
 Relevant code: `engine/matching_engine.cpp` (`matcherLoop`, `startMatcherThread`, `stopMatcherThread`).
 
@@ -289,7 +289,7 @@ Relevant code: `engine/matching_engine.cpp` (`matcherLoop`, `startMatcherThread`
 
 When the visible tranche of an iceberg is fully filled, `dispatchOrder()` allocates a new `Order` from the pool, copies the fields, sets `remaining = min(peak_size, hidden_remaining)`, and inserts it back into the book via the `renewals` list. If an aggressive market order sweeps multiple tranches, each fill triggers another re-insertion and re-match cycle. One call to `dispatchOrder()` executes multiple match cycles.
 
-This is why p99 is an order of magnitude above p50 in the synthetic benchmark (67 919 ns vs 644 ns). With only LIMIT orders, every dispatch is a single match cycle and p99 drops close to p50. The NASDAQ benchmark shows a much lower p99 (2 339 ns) because real order flow contains very few icebergs.
+This is why p99 is two orders of magnitude above p50 in the synthetic benchmark (41 962 ns vs 394 ns). With only LIMIT orders, every dispatch is a single match cycle and p99 drops close to p50. The NASDAQ benchmark shows a much lower p99 (893 ns) because real order flow contains very few icebergs.
 
 Relevant code: `engine/matching_engine.cpp` (`dispatchOrder`, `reclaim` lambda).
 

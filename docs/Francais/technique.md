@@ -279,7 +279,7 @@ En mode deux threads, le producteur (thread principal) et le consommateur (threa
 
 **yield vs busy-spin :** Quand la queue est vide, `matcherLoop()` appelle `std::this_thread::yield()` pour céder le CPU à d'autres threads. En production HFT, le consommateur ferait du busy-spin (pas de yield) pour minimiser la latence de réveil, au coût de 100% d'utilisation CPU sur un cœur dédié. Le yield est le bon compromis pour une démo qui partage une machine.
 
-**Arrêt propre :** `stopMatcherThread()` stocke `stop_flag_ = true` avec `memory_order_release`, puis join le thread. Le join garantit que tous les ordres en queue sont traités avant que le thread principal lise les stats.
+**Arrêt propre :** `stopMatcherThread()` appelle `request_stop()` sur le `jthread`, puis le join. Le join garantit que tous les ordres en queue sont traités avant que le thread principal lise les stats.
 
 Code concerné : `engine/matching_engine.cpp` (`matcherLoop`, `startMatcherThread`, `stopMatcherThread`).
 
@@ -289,7 +289,7 @@ Code concerné : `engine/matching_engine.cpp` (`matcherLoop`, `startMatcherThrea
 
 Quand la tranche visible d'un iceberg est entièrement remplie, `dispatchOrder()` alloue un nouvel `Order` depuis le pool, copie les champs, met `remaining = min(peak_size, hidden_remaining)`, et le réinsère dans le carnet via la liste `renewals`. Si un ordre market agressif balaie plusieurs tranches, chaque fill déclenche une autre réinsertion et un nouveau cycle de matching. Un seul appel à `dispatchOrder()` exécute plusieurs cycles de matching.
 
-C'est pourquoi le p99 est un ordre de grandeur au-dessus du p50 dans le benchmark synthétique (67 919 ns vs 644 ns). Avec uniquement des ordres LIMIT, chaque dispatch est un seul cycle de matching et p99 descend près de p50. Le benchmark NASDAQ montre un p99 beaucoup plus bas (2 339 ns) car le vrai order flow contient très peu d'icebergs.
+C'est pourquoi le p99 est deux ordres de grandeur au-dessus du p50 dans le benchmark synthétique (41 962 ns vs 394 ns). Avec uniquement des ordres LIMIT, chaque dispatch est un seul cycle de matching et p99 descend près de p50. Le benchmark NASDAQ montre un p99 beaucoup plus bas (893 ns) car le vrai order flow contient très peu d'icebergs.
 
 Code concerné : `engine/matching_engine.cpp` (`dispatchOrder`, lambda `reclaim`).
 

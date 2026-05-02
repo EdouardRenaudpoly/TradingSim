@@ -8,14 +8,12 @@
 #include <iomanip>
 #include <chrono>
 
-// RDTSC: read CPU timestamp counter in cycles.
-// No syscall, no memory barrier — minimal overhead on the hot path.
-// Requires a calibration step to convert cycles → nanoseconds.
+// __rdtsc() reads the CPU timestamp counter in ~1 cycle with no syscall.
+// Calibration converts cycles to nanoseconds once at startup.
 #if defined(__x86_64__) || defined(_M_X64)
 #  include <x86intrin.h>
 inline uint64_t rdtsc() noexcept { return __rdtsc(); }
 #else
-// Fallback for non-x86 (ARM, etc.)
 #  include <chrono>
 inline uint64_t rdtsc() noexcept {
     return static_cast<uint64_t>(
@@ -23,7 +21,6 @@ inline uint64_t rdtsc() noexcept {
 }
 #endif
 
-// Estimate CPU frequency by comparing RDTSC against wall-clock over 10ms.
 inline double estimateCpuGhz() {
     using clock = std::chrono::steady_clock;
     auto t0 = clock::now();

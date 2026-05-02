@@ -13,23 +13,21 @@ enum class OrderType   : uint8_t {
 };
 enum class OrderStatus : uint8_t { NEW, PARTIAL, FILLED, CANCELLED, REJECTED };
 
-// Exactly one 64-byte cache line.
-// Layout verified by static_assert below.
-// peak_size occupies the 4-byte natural padding between symbol[8] and next*.
+// alignas(64): one order per cache line, no two orders share a line.
+// peak_size sits in the 4-byte natural padding between symbol[8] and next*.
 struct alignas(64) Order {
     uint64_t    id           = 0;
     uint64_t    trader_id    = 0;
     double      price        = 0.0;
     int32_t     quantity     = 0;   // total quantity (incl. hidden for ICEBERG)
     int32_t     remaining    = 0;   // current visible remaining in book
-    uint64_t    timestamp_ns = 0;   // RDTSC at submission (for latency / time-in-queue)
+    uint64_t    timestamp_ns = 0;   // RDTSC cycles at submission
     Side        side         = Side::BUY;
     OrderType   type         = OrderType::LIMIT;
     OrderStatus status       = OrderStatus::NEW;
     char        symbol[8]    = {};
-    int32_t     peak_size    = 0;   // ICEBERG: visible tranche size; 0 = not iceberg
-    // 1 byte implicit padding here (compiler aligns next* to 8 bytes)
-    Order*      next         = nullptr; // intrusive list: pool free-list OR price-level queue
+    int32_t     peak_size    = 0;   // ICEBERG only: visible tranche size
+    Order*      next         = nullptr; // intrusive link: pool free-list or price-level FIFO
 
     void setSymbol(const char* s) noexcept {
         std::strncpy(symbol, s, 7);
@@ -45,6 +43,6 @@ struct Trade {
     int32_t  quantity       = 0;
     uint64_t timestamp_ns   = 0;
     char     symbol[8]      = {};
-    double   mid_at_fill    = 0.0;  // mid-price at moment of fill (for slippage)
+    double   mid_at_fill    = 0.0;  // mid-price at fill time, used for slippage
     float    book_imbalance = 0.0f; // (bid_depth-ask_depth)/(bid_depth+ask_depth) at fill
 };

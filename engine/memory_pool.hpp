@@ -3,11 +3,8 @@
 #include <atomic>
 #include <cstddef>
 
-// Lock-free slab allocator using an atomic free-list (Treiber stack).
-// T must expose a `T* next` member used for intrusive linking.
-//
-// ABA note: safe when a single thread allocates and another deallocates
-// (SPSC pattern). For MPMC, add a generation counter.
+// Lock-free slab allocator. Uses a Treiber stack (atomic CAS free-list).
+// T must have a `T* next` member for intrusive linking.
 template<typename T, std::size_t Capacity>
 class MemoryPool {
 public:
@@ -18,8 +15,9 @@ public:
         head_.store(&storage_[0], std::memory_order_relaxed);
     }
 
-    // Called from producer thread — O(1) amortised
     T* allocate() noexcept {
+        // compare_exchange_weak: single CPU instruction (lock cmpxchg), no syscall.
+        // acquire: ensures we see the full object before using it.
         T* old = head_.load(std::memory_order_acquire);
         while (old) {
             if (head_.compare_exchange_weak(old, old->next,
@@ -27,10 +25,9 @@ public:
                     std::memory_order_acquire))
                 return old;
         }
-        return nullptr; // pool exhausted
+        return nullptr;
     }
 
-    // Called from consumer/matcher thread — O(1)
     void deallocate(T* node) noexcept {
         node->next = head_.load(std::memory_order_relaxed);
         while (!head_.compare_exchange_weak(node->next, node,
@@ -41,7 +38,8 @@ public:
     static constexpr std::size_t capacity() noexcept { return Capacity; }
 
 private:
-    // Separate cache lines: storage array + head pointer never share a line
+    // storage_ and head_ on separate cache lines: a write to head_ by one thread
+    // does not invalidate the storage_ cache line read by another (false sharing).
     alignas(64) std::array<T, Capacity> storage_;
     alignas(64) std::atomic<T*>         head_{nullptr};
 };

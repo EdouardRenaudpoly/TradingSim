@@ -11,7 +11,7 @@
 static void usage(const char* prog) {
     std::cerr
         << "Usage:\n"
-        << "  " << prog << " --replay <data.csv> [--output <metrics.csv>]\n"
+        << "  " << prog << " --replay <data.csv> [--output <metrics.csv>] [--db <trades.db>]\n"
         << "  " << prog << " --benchmark [--orders <N>]\n";
 }
 
@@ -64,12 +64,14 @@ static void runBenchmark(int n_orders) {
 int main(int argc, char* argv[]) {
     std::string replay_path;
     std::string output_path;
+    std::string db_path;
     bool        benchmark = false;
     int         n_orders  = 100'000;
 
     for (int i = 1; i < argc; ++i) {
         if      (!std::strcmp(argv[i], "--replay")    && i+1 < argc) replay_path = argv[++i];
         else if (!std::strcmp(argv[i], "--output")    && i+1 < argc) output_path = argv[++i];
+        else if (!std::strcmp(argv[i], "--db")        && i+1 < argc) db_path     = argv[++i];
         else if (!std::strcmp(argv[i], "--benchmark"))               benchmark   = true;
         else if (!std::strcmp(argv[i], "--orders")    && i+1 < argc) n_orders    = std::atoi(argv[++i]);
         else { usage(argv[0]); return 1; }
@@ -85,7 +87,11 @@ int main(int argc, char* argv[]) {
         sim.printMetrics();
         if (!output_path.empty()) {
             sim.exportMetrics(output_path);
-            std::cout << "\nMetrics exported to: " << output_path << "\n";
+            std::cout << "Metrics exported to: " << output_path << "\n";
+        }
+        if (!db_path.empty()) {
+            sim.exportDB(db_path);
+            std::cout << "Database written to: " << db_path << "\n";
         }
     } catch (const std::exception& e) {
         std::cerr << "[error] " << e.what() << "\n";

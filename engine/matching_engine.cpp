@@ -19,13 +19,13 @@ void EngineStats::print() const {
 }
 
 PriceLadder& MatchingEngine::getOrCreateBook(const char* symbol) {
-    auto& ptr = books_[symbol];
-    if (!ptr) ptr = std::make_unique<PriceLadder>();
+    auto& ptr = books_[symbolToKey(symbol)];
+    if (!ptr) ptr = std::make_unique<PriceLadder>(0.0, 500.0, 0.01, POOL_SIZE);
     return *ptr;
 }
 
 PriceLadder::Snapshot MatchingEngine::bookSnapshot(const char* symbol) {
-    auto it = books_.find(symbol);
+    auto it = books_.find(symbolToKey(symbol));
     return it != books_.end() ? it->second->snapshot() : PriceLadder::Snapshot{};
 }
 
@@ -68,9 +68,8 @@ std::vector<Trade> MatchingEngine::processAll() {
     while (auto opt = queue_.pop()) {
         Order* o = *opt;
 
-        // Time-in-queue: cycles spent waiting in SPSC queue
-        uint64_t tsc_now       = rdtsc();
-        uint64_t wait_cycles   = tsc_now - o->timestamp_ns;
+        uint64_t tsc_now     = rdtsc();
+        uint64_t wait_cycles = tsc_now - o->timestamp_ns;
         stats_.total_queue_wait_ns += static_cast<double>(wait_cycles) / cpu_ghz_;
 
         uint64_t t0     = tsc_now;
@@ -84,8 +83,6 @@ std::vector<Trade> MatchingEngine::processAll() {
     }
     return all;
 }
-
-// Set mid_at_fill and book_imbalance on each trade, then update EngineStats.
 
 void MatchingEngine::annotateAndRecord(std::vector<Trade>& trades,
                                         const PriceLadder::Snapshot& snap) {
@@ -104,11 +101,9 @@ void MatchingEngine::annotateAndRecord(std::vector<Trade>& trades,
 std::vector<Trade> MatchingEngine::dispatchOrder(Order* order) {
     PriceLadder& book = getOrCreateBook(order->symbol);
 
-    // Snapshot before insertion — used for slippage and imbalance annotation
-    auto snap_before = book.snapshot();
+    auto snap_before = book.snapshot(); // captured before insertion for slippage annotation
 
-    // Iceberg renewals: orders to re-insert after the current match cycle
-    std::vector<Order*> renewals;
+    std::vector<Order*> renewals; // iceberg tranches to re-insert after each match cycle
 
     auto reclaim = [&](Order* filled) {
         auto it = icebergs_.find(filled->id);
@@ -152,8 +147,6 @@ std::vector<Trade> MatchingEngine::dispatchOrder(Order* order) {
         break;
 
     case OrderType::MARKET: {
-        // Sweep resting orders without inserting (avoids sentinel-price issue).
-        // Loop: iceberg renewals may replenish after each sweep cycle.
         auto t = book.matchMarket(order, reclaim);
         trades.insert(trades.end(), t.begin(), t.end());
 
@@ -188,7 +181,6 @@ std::vector<Trade> MatchingEngine::dispatchOrder(Order* order) {
         break;
 
     case OrderType::POST_ONLY:
-        // Reject if the order would immediately cross the book
         if (book.canFill(order->side, order->price, 1)) {
             order->status = OrderStatus::REJECTED;
             stats_.orders_rejected++;
@@ -196,7 +188,6 @@ std::vector<Trade> MatchingEngine::dispatchOrder(Order* order) {
             return {};
         }
         book.insert(order);
-        // No match call: POST_ONLY is by definition a resting order
         break;
 
     case OrderType::ICEBERG:
@@ -210,17 +201,16 @@ std::vector<Trade> MatchingEngine::dispatchOrder(Order* order) {
         break;
     }
 
-    // Drain iceberg renewals: use swap-loop because match(reclaim) may push
-    // additional renewals while we're processing the current batch.
+    // Swap-loop: match(reclaim) can push new renewals while we iterate,
+    // so we snapshot the current batch before each pass to avoid UB.
     while (!renewals.empty()) {
         std::vector<Order*> batch;
-        std::swap(batch, renewals);  // take snapshot; renewals is now empty
+        std::swap(batch, renewals);
         for (Order* r : batch) book.insert(r);
         auto more = book.match(reclaim);
         trades.insert(trades.end(), more.begin(), more.end());
     }
 
-    // Annotate trades with market context and update stats
     annotateAndRecord(trades, snap_before);
 
     if (!trades.empty()) stats_.orders_filled++;

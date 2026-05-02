@@ -12,19 +12,14 @@ void Metrics::record(const Trade& trade) {
         m.trade_count++;
         m.volume += trade.quantity;
 
-        // PnL: buyer pays, seller receives
         if (is_buyer)
             m.pnl -= trade.price * trade.quantity;
         else
             m.pnl += trade.price * trade.quantity;
 
-        // Slippage: cost of executing away from mid-price
-        // Buyer slippage > 0 when exec_price > mid (paid premium)
-        // Seller slippage > 0 when exec_price < mid (sold at discount)
         if (trade.mid_at_fill > 0.0)
             m.slippage += std::abs(trade.price - trade.mid_at_fill) * trade.quantity;
 
-        // VWAP: running volume-weighted average price
         double prev_vol = static_cast<double>(m.volume - trade.quantity);
         m.vwap = (m.vwap * prev_vol + trade.price * trade.quantity) / m.volume;
     };

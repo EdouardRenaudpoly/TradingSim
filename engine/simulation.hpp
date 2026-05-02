@@ -2,6 +2,7 @@
 #include "matching_engine.hpp"
 #include "metrics.hpp"
 #include <string>
+#include <vector>
 
 class Simulation {
 public:
@@ -9,10 +10,12 @@ public:
     void replayCSV(const std::string& csv_path);
     void printMetrics()                           const;
     void exportMetrics(const std::string& path)   const;
+    void exportDB(const std::string& db_path)     const;
 
 private:
-    MatchingEngine engine_;
-    Metrics        metrics_;
+    MatchingEngine     engine_;
+    Metrics            metrics_;
+    std::vector<Trade> all_trades_;
 
     struct CsvRow {
         uint64_t  timestamp_ns;

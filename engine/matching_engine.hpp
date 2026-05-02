@@ -5,8 +5,8 @@
 #include "latency.hpp"
 #include "price_ladder.hpp"
 #include <atomic>
+#include <cstring>
 #include <memory>
-#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -81,7 +81,15 @@ private:
     std::atomic<uint64_t>          processed_{0};
     double                         cpu_ghz_ = -1.0; // calibrated lazily
 
-    std::unordered_map<std::string, std::unique_ptr<PriceLadder>> books_;
+    // Symbol stored as uint64_t (8 bytes reinterpreted): integer hash is one CPU
+    // instruction vs strlen + iterative hash for std::string.
+    std::unordered_map<uint64_t, std::unique_ptr<PriceLadder>> books_;
+
+    static uint64_t symbolToKey(const char* s) noexcept {
+        uint64_t key = 0;
+        std::memcpy(&key, s, std::min(std::strlen(s), std::size_t(8)));
+        return key;
+    }
 
     // ICEBERG state: hidden quantity remaining after current visible tranche
     struct IcebergState { int32_t peak_size; int32_t hidden_remaining; };

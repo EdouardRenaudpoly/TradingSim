@@ -1,4 +1,5 @@
 #include "simulation.hpp"
+#include "trade_store.hpp"
 #include <fstream>
 #include <sstream>
 #include <iostream>
@@ -69,8 +70,10 @@ void Simulation::replayCSV(const std::string& csv_path) {
                            row.side, row.type, row.peak_size);
 
             auto trades = engine_.processAll();
-            for (const auto& t : trades)
+            for (const auto& t : trades) {
                 metrics_.record(t);
+                all_trades_.push_back(t);
+            }
 
         } catch (const std::exception& e) {
             std::cerr << "[warn] " << e.what() << "\n";
@@ -86,4 +89,10 @@ void Simulation::printMetrics() const {
 
 void Simulation::exportMetrics(const std::string& path) const {
     metrics_.exportCSV(path);
+}
+
+void Simulation::exportDB(const std::string& db_path) const {
+    TradeStore store(db_path);
+    store.insertTrades(all_trades_);
+    store.insertMetrics(metrics_);
 }

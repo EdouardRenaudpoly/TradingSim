@@ -16,6 +16,7 @@ public:
     void record(const Trade& trade);
 
     const TraderMetrics& get(uint64_t trader_id) const;
+    const std::unordered_map<uint64_t, TraderMetrics>& all() const noexcept { return data_; }
     void print()                            const;
     void exportCSV(const std::string& path) const;
 

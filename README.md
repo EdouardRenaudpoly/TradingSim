@@ -19,11 +19,21 @@ cmake --build build -j$(nproc)
 ```bash
 ./build/engine --replay data/sample_data.csv
 ./build/engine --replay data/sample_data.csv --output metrics.csv
+./build/engine --replay data/sample_data.csv --db trades.db
 ```
 
 CSV format: `timestamp,symbol,price,quantity,side,trader_id[,type[,peak_size]]`
 
 Valid values — `side`: `BUY`/`SELL`. `type`: `LIMIT`, `MARKET`, `IOC`, `FOK`, `POST_ONLY`, `ICEBERG`.
+
+With `--db`, all trades and per-trader metrics are written to a SQLite database. No installation required — SQLite is bundled as a vendored amalgamation (`third_party/sqlite/`).
+
+```sql
+-- Example queries after a replay
+SELECT symbol, price, quantity, mid_at_fill, book_imbalance FROM trades;
+SELECT trader_id, pnl, vwap, slippage FROM trader_metrics ORDER BY pnl DESC;
+SELECT symbol, AVG(price) as avg_price, SUM(quantity) as total_vol FROM trades GROUP BY symbol;
+```
 
 **Synthetic benchmark:**
 ```bash
@@ -52,16 +62,26 @@ cd build && ctest --output-on-failure
 
 ## Benchmark
 
-Measured on a single core, Release build (`-O3 -march=native`), 100 000 orders across 3 symbols and all 6 order types.
+Single core, Release build (`-O3 -march=native`), 100 000 orders across 3 symbols and all 6 order types.
 
 ```
-Throughput : ~280 000 orders/sec
-Latency p50 :    ~293 ns
-Latency p99 :  ~66 000 ns
-Queue wait  :    ~120 ns avg
+Throughput :  358 971 orders/sec
+Latency p50 :     174 ns
+Latency p95 :   5 377 ns
+Latency p99 :  54 573 ns
+Queue wait  :     115 ns avg
 ```
 
-p50 is the median dispatch time per order (price-level lookup + match loop). p99 spikes come from iceberg replenishment cycles, which re-insert and re-match in a loop.
+p50 is the median dispatch time per order (price-level lookup + match loop). p99 spikes come from iceberg replenishment cycles which re-insert and re-match in a loop.
+
+**Performance history** — three optimizations applied after initial implementation:
+
+| Optimization | Throughput | p50 | p99 |
+|---|---|---|---|
+| Baseline | 311 658 /s | 244 ns | 61 931 ns |
+| + template callbacks + flat order index + uint64 symbol key | **358 971 /s** | **174 ns** | **54 573 ns** |
+
+The largest gain came from replacing `std::function` callbacks with template parameters in the match loop. `std::function` allocates on the heap for each lambda capture and dispatches through a virtual call — both eliminated with `if constexpr` template instantiation.
 
 ---
 
@@ -144,6 +164,55 @@ This engine uses an intrusive list: the `next` pointer is a field inside `Order`
 The field `Order* next` serves double duty: inside the memory pool, it links free slots in the Treiber stack free-list. Once an order is allocated and inserted into a price level, it links it in the price-level FIFO. The two uses never overlap.
 
 Relevant code: `engine/order_types.hpp` line 32, `engine/price_ladder.cpp` lines 7–20.
+
+---
+
+### Template callbacks instead of `std::function` in the match loop
+
+`std::function` is a type-erased wrapper. When you construct one from a lambda that captures variables, it allocates memory on the heap and stores a virtual function pointer for the call. On every invocation, the call goes through that pointer — one indirect branch the CPU branch predictor cannot inline.
+
+In the match loop, `on_filled` is called once per filled order. With `std::function`, that is one heap allocation when the callback is set up plus one indirect call per fill, on the path that runs thousands of times per second.
+
+Replacing it with a template parameter lets the compiler see the concrete type at instantiation time. The callback is inlined entirely — zero heap allocation, zero indirect branch. The `if constexpr (!std::is_null_pointer_v<F>)` check eliminates the callback path at compile time when no callback is passed, so callers that don't need it pay nothing.
+
+```cpp
+// std::function version — heap alloc + virtual dispatch per call
+std::vector<Trade> match(std::function<void(Order*)> on_filled = {});
+
+// Template version — inlined, no allocation
+template<typename F = std::nullptr_t>
+std::vector<Trade> match(F on_filled = nullptr);
+```
+
+Relevant code: `engine/price_ladder.hpp` template section.
+
+---
+
+### Flat array instead of `unordered_map` for order-to-level lookup
+
+When an order is filled or cancelled, the engine needs to know which price level it sits at. The naive approach is `unordered_map<order_id, level_index>`. Each lookup hashes a 64-bit integer, probes a bucket, and follows a pointer — roughly 20–50 ns under contention.
+
+The replacement is a `std::vector<int32_t>` indexed by `order_id % pool_capacity`. This is a direct array access: one multiplication, one bounds check, one load. It works because order IDs are assigned sequentially from a pool of fixed size. A slot can only be reused after its previous occupant is fully done (filled or cancelled and deallocated back to the pool), so `id % capacity` is collision-free by construction.
+
+Relevant code: `engine/price_ladder.hpp` (`order_level_`), `engine/price_ladder.cpp` constructor.
+
+---
+
+### Symbol stored as `uint64_t` instead of `std::string`
+
+Trading symbols fit in 8 bytes (`char[8]`). Storing them as `std::string` means the map key is a heap-allocated object. Hashing it calls `strlen` then iterates over characters. Looking up `"AAPL"` in `unordered_map<string, PriceLadder>` is slower than it needs to be.
+
+Reinterpreting the 8 bytes as a `uint64_t` gives an integer key. The hash for a 64-bit integer is a single multiply-shift operation (roughly 2 cycles). The map lookup is otherwise identical.
+
+```cpp
+static uint64_t symbolToKey(const char* s) noexcept {
+    uint64_t key = 0;
+    std::memcpy(&key, s, std::min(std::strlen(s), std::size_t(8)));
+    return key;
+}
+```
+
+Relevant code: `engine/matching_engine.hpp` (`symbolToKey`, `books_`).
 
 ---
 

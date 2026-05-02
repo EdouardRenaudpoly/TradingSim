@@ -11,8 +11,6 @@ static std::vector<Trade> submitAndProcess(MatchingEngine& e,
     return e.processAll();
 }
 
-// ── POST_ONLY ─────────────────────────────────────────────────────────────────
-
 TEST(MatchingEngine, PostOnly_AcceptedWhenNoImmedateMatch) {
     MatchingEngine e;
     // No orders in book → post-only should rest
@@ -33,8 +31,6 @@ TEST(MatchingEngine, PostOnly_RejectedWhenWouldCross) {
     EXPECT_TRUE(trades.empty());
     EXPECT_EQ(e.stats().orders_rejected, 1u);
 }
-
-// ── ICEBERG ───────────────────────────────────────────────────────────────────
 
 TEST(MatchingEngine, Iceberg_OnlyPeakVisibleInBook) {
     MatchingEngine e;
@@ -69,8 +65,6 @@ TEST(MatchingEngine, Iceberg_TotalQuantityConserved) {
     EXPECT_EQ(total_filled, 60);
 }
 
-// ── FOK ───────────────────────────────────────────────────────────────────────
-
 TEST(MatchingEngine, FOK_RejectedWhenInsufficientLiquidity) {
     MatchingEngine e;
     submitAndProcess(e, 2, "AAPL", 150.0, 10, Side::SELL);
@@ -86,8 +80,6 @@ TEST(MatchingEngine, FOK_FilledCompletely) {
     ASSERT_EQ(trades.size(), 1u);
     EXPECT_EQ(trades[0].quantity, 100);
 }
-
-// ── Engine Stats ──────────────────────────────────────────────────────────────
 
 TEST(MatchingEngine, OTR_OrderToTradeRatio) {
     MatchingEngine e;
@@ -111,8 +103,6 @@ TEST(MatchingEngine, FillRate) {
     EXPECT_GE(e.stats().fillRate(), 0.0);
     EXPECT_LE(e.stats().fillRate(), 1.0);
 }
-
-// ── Slippage & Imbalance ──────────────────────────────────────────────────────
 
 TEST(MatchingEngine, SlippageIsNonNegative) {
     MatchingEngine e;

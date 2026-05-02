@@ -22,8 +22,6 @@ static Order* makeOrder(uint64_t id, uint64_t tid, const char* sym,
     return o;
 }
 
-// ── Basic state ───────────────────────────────────────────────────────────────
-
 TEST(PriceLadder, EmptyOnConstruct) {
     PriceLadder book;
     EXPECT_TRUE(book.empty());
@@ -31,8 +29,6 @@ TEST(PriceLadder, EmptyOnConstruct) {
     EXPECT_EQ(s.bid_depth, 0);
     EXPECT_EQ(s.ask_depth, 0);
 }
-
-// ── Limit order matching ──────────────────────────────────────────────────────
 
 TEST(PriceLadder, NoMatchWhenSpreadPositive) {
     PriceLadder book;
@@ -80,8 +76,6 @@ TEST(PriceLadder, PriceTimePriority) {
     EXPECT_EQ(trades[0].buyer_id, 1u); // b1 matched first
 }
 
-// ── Order types ───────────────────────────────────────────────────────────────
-
 TEST(PriceLadder, CancelOrder) {
     PriceLadder book;
     book.insert(makeOrder(1, 1, "AAPL", 150.0, 100, Side::BUY));
@@ -103,8 +97,6 @@ TEST(PriceLadder, FOK_AcceptWhenSufficientLiquidity) {
     EXPECT_TRUE(book.canFill(Side::BUY, 150.0, 100));
 }
 
-// ── Snapshot ──────────────────────────────────────────────────────────────────
-
 TEST(PriceLadder, Snapshot) {
     PriceLadder book;
     book.insert(makeOrder(1, 1, "AAPL", 149.0, 80,  Side::BUY));
@@ -116,8 +108,6 @@ TEST(PriceLadder, Snapshot) {
     EXPECT_EQ(s.bid_depth,  80);
     EXPECT_EQ(s.ask_depth, 120);
 }
-
-// ── Multi-level matching ──────────────────────────────────────────────────────
 
 TEST(PriceLadder, MultipleTradesInOneMatch) {
     PriceLadder book;
